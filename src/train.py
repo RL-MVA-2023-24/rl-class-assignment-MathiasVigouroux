@@ -51,7 +51,7 @@ class ProjectAgent:
         self.model = ActorCritic(state_space, action_space)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.gamma = gamma
-        self.path = os.getcwd()+"/model.pt"
+        self.path = os.getcwd()+"/src/model.pt"
 
         
     def act(self, state):
@@ -83,7 +83,7 @@ class ProjectAgent:
         self.optimizer.step()
     
     def save(self):
-        self.path = os.getcwd()+"/model.pt"
+        self.path = os.getcwd()+"/src/model.pt"
         torch.save(self.model.state_dict(), self.path)
     
     def load(self):
