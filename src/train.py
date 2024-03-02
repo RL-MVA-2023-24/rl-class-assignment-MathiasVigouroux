@@ -84,6 +84,7 @@ class ProjectAgent:
         torch.save(self.model.state_dict(), path)
     
     def load(self):
-        self.model.load_state_dict(torch.load(path))
+        
+        self.model.load_state_dict(torch.load(self.path))
         self.model.eval()
 
