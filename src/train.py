@@ -28,7 +28,7 @@ env = TimeLimit(
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, state_space, action_space, hidden_size=256):
+    def __init__(self, state_space=6, action_space=4, hidden_size=256):
         super(ActorCritic, self).__init__()
         self.affine = nn.Linear(state_space, hidden_size)
         
