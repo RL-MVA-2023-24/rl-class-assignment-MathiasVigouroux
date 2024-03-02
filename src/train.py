@@ -81,13 +81,13 @@ class ProjectAgent:
         (actor_loss + critic_loss).backward()
         self.optimizer.step()
     
-    def save(self, path):
-        self.path = os.getcwd()+"/model.pt"
-        torch.save(self.model.state_dict(), self.path)
+    #def save(self, path):
+    #    self.path = os.getcwd()+"/model.pt"
+    #   torch.save(self.model.state_dict(), self.path)
     
-    def load(self):
-        self.path = os.getcwd()+"/model.pt"
-        self.model.load_state_dict(torch.load(self.path))
-        self.model.eval()
+    #def load(self):
+    #    self.path = os.getcwd()+"/model.pt"
+    #    self.model.load_state_dict(torch.load(self.path))
+    #    self.model.eval()
 
 
