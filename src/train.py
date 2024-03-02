@@ -27,7 +27,6 @@ env = TimeLimit(
 #    def load(self):
 #        pass
 
-
 class ActorCritic(nn.Module):
     def __init__(self, state_space=6, action_space=4, hidden_size=256):
         super(ActorCritic, self).__init__()
