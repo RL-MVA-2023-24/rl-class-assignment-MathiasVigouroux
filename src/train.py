@@ -90,5 +90,4 @@ class ProjectAgent:
         self.model.load_state_dict(torch.load(self.path))
         self.model.eval()
 
-path = os.getcwd()
-self.save(path)
+
