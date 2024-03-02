@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
 import numpy as np
+import os
 
 
 env = TimeLimit(
@@ -81,10 +82,13 @@ class ProjectAgent:
         self.optimizer.step()
     
     def save(self, path):
-        torch.save(self.model.state_dict(), path)
+        self.path = os.getcwd()+"/model.pt"
+        torch.save(self.model.state_dict(), self.path)
     
     def load(self):
-        
+        self.path = os.getcwd()+"/model.pt"
         self.model.load_state_dict(torch.load(self.path))
         self.model.eval()
 
+path = os.getcwd()
+self.save(path)
