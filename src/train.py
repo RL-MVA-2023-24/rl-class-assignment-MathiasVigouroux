@@ -52,6 +52,8 @@ class ProjectAgent:
         self.model = ActorCritic(state_space, action_space)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.gamma = gamma
+        self.path = os.getcwd()+"/model.pt"
+
         
     def act(self, state):
         state = torch.from_numpy(state).float().unsqueeze(0)
