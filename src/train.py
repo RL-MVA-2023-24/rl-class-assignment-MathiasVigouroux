@@ -47,7 +47,7 @@ class ActorCritic(nn.Module):
         return action_probs, state_values
 
 class ProjectAgent:
-    def __init__(self, state_space, action_space, lr=3e-4, gamma=0.99):
+    def __init__(self, state_space=6, action_space=4, lr=3e-4, gamma=0.99):
         self.model = ActorCritic(state_space, action_space)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.gamma = gamma
