@@ -27,6 +27,7 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.data)
 
+
 env = TimeLimit(
     env=HIVPatient(domain_randomization=True), max_episode_steps=200
 )  # The time wrapper limits the number of steps in an episode at 200.
@@ -37,225 +38,182 @@ env = TimeLimit(
 # Don't modify the methods names and signatures, but you can add methods.
 # ENJOY!
 class ProjectAgent:
-    # act greedy
-    def act(self, observation, use_random=False):
 
-        device = "cuda" if next(self.model.parameters()).is_cuda else "cpu"
+    def act(self, observation, use_random=False): #only the actor will do an action 
+        device = "cuda" if next(self.actor.parameters()).is_cuda else "cpu"
+        observation_tensor = torch.Tensor(observation).unsqueeze(0).to(device)
+
         with torch.no_grad():
-            Q = self.model(torch.Tensor(observation).unsqueeze(0).to(device))
-            return torch.argmax(Q).item()
+            action_probabilities = self.actor(observation_tensor)
+            if use_random:
+                # Select a random action with uniform probability
+                action = torch.randint(0, len(action_probabilities.squeeze()), (1,)).item()
+            else:
+                # Sample an action from the probability distribution output by the actor
+                distribution = torch.distributions.Categorical(action_probabilities)
+                action = distribution.sample().item()
+        
+        return action
 
-        # return 0
+    def save(self, filepath):
+      checkpoint = {
+          'actor_state_dict': self.actor.state_dict(),
+          'critic_state_dict': self.critic.state_dict()
+          
+      }
+      path = filepath + '/AC_model.pt'
+      torch.save(checkpoint, path)
+      print(f"Model saved to {path}")
+      return
 
 
-    def save(self, path):
-        self.path = path + "/model2.pt"
-        torch.save(self.model.state_dict(), self.path)
-        return 
 
-    def load(self):
-        device = torch.device('cpu')
-        self.path = os.getcwd() + "/model2.pt"
-        self.model = self.network({}, device)
-        self.model.load_state_dict(torch.load(self.path, map_location=device))
-        self.model.eval()
-        return 
+    def load(self, filepath):
+      device = torch.device('cpu')
+      path = filepath + '/AC_model.pt'
+      checkpoint = torch.load(path)
+      self.actor, self.critic = self.create_actor_critic_networks(
+            env.observation_space.shape[0],
+            env.action_space.n,
+            256,  # Example: number of neurons in hidden layers
+            device
+        )
+      # Load the state dicts
+      self.actor.load_state_dict(checkpoint['actor_state_dict'])
+      self.critic.load_state_dict(checkpoint['critic_state_dict'])
+      print(f"Model loaded from {path}")
+      return
+
 
     ## MODEL ARCHITECTURE
-    # this work meh => 100 episode to see something good happening askip
-    #train for 100 episode => start validation after 100 ep 
-    def network(self, config, device):
 
-        state_dim = env.observation_space.shape[0]
-        n_action = env.action_space.n 
-        nb_neurons=256 #go try 256? 512? 1024 ? idea stack one more layer for fun :) :)
-
-        DQN = torch.nn.Sequential(nn.Linear(state_dim, nb_neurons),
-                          nn.ReLU(),
-                          nn.Linear(nb_neurons, nb_neurons),
-                          nn.ReLU(), 
-                          nn.Linear(nb_neurons, nb_neurons),
-                          nn.ReLU(), 
-                          nn.Linear(nb_neurons, nb_neurons),
-                          nn.ReLU(), 
-                          nn.Linear(nb_neurons, nb_neurons), # try this after ?
-                          nn.ReLU(),
-                          nn.Linear(nb_neurons, n_action)).to(device)
-
-        return DQN
-
-    ## UTILITY FUNCTIONS
+    def create_actor_critic_networks(self, state_dim, n_action, nb_neurons, device): #action_critic_network
+      # Actor Network
+      actor = torch.nn.Sequential(
+          nn.Linear(state_dim, nb_neurons),
+          nn.ReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.ReLU(),
+          nn.Linear(nb_neurons, n_action),
+          nn.Softmax(dim=-1)  # Use Softmax for action probability distribution
+      ).to(device)
     
-    def greedy_action(self, network, state):
-        device = "cuda" if next(network.parameters()).is_cuda else "cpu"
-        with torch.no_grad():
-            Q = network(torch.Tensor(state).unsqueeze(0).to(device))
-            return torch.argmax(Q).item()
+      # Critic Network
+      critic = torch.nn.Sequential(
+          nn.Linear(state_dim, nb_neurons),
+          nn.ReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.ReLU(),
+          nn.Linear(nb_neurons, 1)  # Outputs a single value estimating the state value
+      ).to(device)
 
-    def gradient_step(self):
-        if len(self.memory) > self.batch_size:
-            X, A, R, Y, D = self.memory.sample(self.batch_size)
-            QYmax = self.target_model(Y).max(1)[0].detach()
-            update = torch.addcmul(R, 1-D, QYmax, value=self.gamma)
-            QXA = self.model(X).gather(1, A.to(torch.long).unsqueeze(1))
-            loss = self.criterion(QXA, update.unsqueeze(1))
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step() 
+      return actor, critic
 
-    def gradient_step_v2(self):
-        if len(self.memory) > self.batch_size:
-            X, A, R, Y, D = self.memory.sample(self.batch_size)
-            Q_target_Ymax = self.target_model(Y).max(1)[0].detach()
-            Q_Ymax = self.model(Y).max(1)[0].detach()
-            next_Q = torch.min(Q_target_Ymax, Q_Ymax)
-            update = torch.addcmul(R, 1-D, next_Q, value=self.gamma)
-            Q_target_XA = self.target_model(X).gather(1, A.to(torch.long).unsqueeze(1))
-            Q_XA = self.model(X).gather(1, A.to(torch.long).unsqueeze(1))
-            
-            loss = self.criterion(Q_target_XA, update.unsqueeze(1))
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step() 
-            
-            loss = self.criterion(Q_XA, update.unsqueeze(1))
-            self.optimizer2.zero_grad()
-            loss.backward()
-            self.optimizer2.step() 
+
     
+
+
     def train(self):
+    ## CONFIGURE NETWORK
+    # Actor-Critic config
+      config = {
+          'nb_actions': env.action_space.n,
+          'learning_rate': 0.001,
+          'gamma': 0.98,
+          'buffer_size': 100000,
+          'batch_size': 64,  # Typically smaller batch size for online updates
+          'update_freq': 1,  # Update frequency for the actor and critic networks
+          'critic_learning_rate': 0.001,  # Learning rate for critic
+          'actor_learning_rate': 0.0001,  # Learning rate for actor
+          'gradient_steps' : 50,
+      }
 
-        ## CONFIGURE NETWORK
-        # DQN config (change here for better results?)
-        config = {'nb_actions': env.action_space.n,
-                'learning_rate': 0.001,
-                'gamma': 0.98,
-                'buffer_size': 100000,
-                'epsilon_min': 0.02,
-                'epsilon_max': 1.,
-                'epsilon_decay_period': 20000, # go plus haut? plus bas ?
-                'epsilon_delay_decay': 100,
-                'batch_size': 800,
-                'gradient_steps': 3,
-                'update_target_strategy': 'replace', # or 'ema'
-                'update_target_freq': 400,
-                'update_target_tau': 0.005,
-                'criterion': torch.nn.SmoothL1Loss()}
+      device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+      print('Using device:', device)
 
-        # network
-        device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print('Using device:', device)
-        self.model = self.network(config, device)
-        self.target_model = deepcopy(self.model).to(device)
-
-        # 
-        self.gamma = config['gamma']
-        self.batch_size = config['batch_size']
-        self.nb_actions = config['nb_actions']
-
-        # epsilon greedy strategy
-        epsilon_max = config['epsilon_max']
-        epsilon_min = config['epsilon_min']
-        epsilon_stop = config['epsilon_decay_period'] if 'epsilon_decay_period' in config.keys() else 1000
-        epsilon_delay = config['epsilon_delay_decay'] if 'epsilon_delay_decay' in config.keys() else 20
-        epsilon_step = (epsilon_max-epsilon_min)/epsilon_stop
-
-        # memory buffer
-        self.memory = ReplayBuffer(config['buffer_size'], device)
-
-        # learning parameters (loss, lr, optimizer, gradient step)
-        self.criterion = config['criterion'] if 'criterion' in config.keys() else torch.nn.MSELoss()
-        lr = config['learning_rate'] if 'learning_rate' in config.keys() else 0.001
-        
-        self.optimizer = config['optimizer'] if 'optimizer' in config.keys() else torch.optim.Adam(self.model.parameters(), lr=lr)
-        self.optimizer2 = config['optimizer'] if 'optimizer' in config.keys() else torch.optim.Adam(self.model.parameters(), lr=lr)
-        #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=88, gamma=0.1)
-
-        nb_gradient_steps = config['gradient_steps'] if 'gradient_steps' in config.keys() else 1
-
-        # target network
-        update_target_strategy = config['update_target_strategy'] if 'update_target_strategy' in config.keys() else 'replace'
-        update_target_freq = config['update_target_freq'] if 'update_target_freq' in config.keys() else 20
-        update_target_tau = config['update_target_tau'] if 'update_target_tau' in config.keys() else 0.005
+      # Initialize actor and critic networks
+      #print(env.observation_space.shape[0], env.action_space.n)
+      self.actor, self.critic = self.create_actor_critic_networks(
+          env.observation_space.shape[0],
+          env.action_space.n,
+          256,  # Example: number of neurons in hidden layers
+          device
+      )
 
 
-        previous_val = 0
-        ## INITIATE NETWORK
 
-        max_episode = 240 #300 #epoch #maximum around 100 i guess
+      # Optimizers for actor and critic
+      actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=config['actor_learning_rate'])
+      critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=config['critic_learning_rate'])
 
-        episode_return = []
-        episode = 0
-        episode_cum_reward = 0
-        state, _ = env.reset()
-        epsilon = epsilon_max
-        step = 0
+      # Loss function for critic updates
+      critic_loss_fn = torch.nn.MSELoss()
 
-        ## TRAIN NETWORK
+      ## TRAINING LOOP
+      max_episodes = 20
+      episode = 0
+      val_episode = 15 #the episode when we start to save by looking at the validation loss
+      previous_val = 0.
+      for episode in range(max_episodes):
+          state, _ = env.reset()
+          episode_cum_reward = 0
 
-        while episode < max_episode:
-            # update epsilon
-            if step > epsilon_delay:
-                epsilon = max(epsilon_min, epsilon-epsilon_step)
-            # select epsilon-greedy action
-            if np.random.rand() < epsilon:
-                action = env.action_space.sample()
-            else:
-                action = self.greedy_action(self.model, state)
-            # step
-            next_state, reward, done, trunc, _ = env.step(action)
-            self.memory.append(state, action, reward, next_state, done)
-            episode_cum_reward += reward
-            # train
-            for _ in range(nb_gradient_steps): 
-                self.gradient_step()
-            #if episode > 5:
-            #   self.scheduler.step()
-            # update target network if needed
-            if update_target_strategy == 'replace':
-                if step % update_target_freq == 0: 
-                    self.target_model.load_state_dict(self.model.state_dict())
-            if update_target_strategy == 'ema':
-                target_state_dict = self.target_model.state_dict()
-                model_state_dict = self.model.state_dict()
-                tau = update_target_tau
-                for key in model_state_dict:
-                    target_state_dict[key] = tau*model_state_dict[key] + (1-tau)*target_state_dict[key]
-                self.target_model.load_state_dict(target_state_dict)
-            # next transition
-            step += 1
-            if done or trunc:
-                episode += 1
-                if episode > 75:
-                    validation_score = evaluate_HIV(agent=self, nb_episode=1)
-                else :
-                    validation_score = 0
-                print("Episode ", '{:3d}'.format(episode), 
-                      ", epsilon ", '{:6.2f}'.format(epsilon), 
-                      ", batch size ", '{:5d}'.format(len(self.memory)), 
-                      ", episode return ", '{:.2e}'.format(episode_cum_reward),
-                      # evaluation score 
-                      ", validation score ", '{:.2e}'.format(validation_score),
-                      sep='')
-                state, _ = env.reset()
-                # EARLY STOPPING => works really well
-                if validation_score > previous_val:
-                    print("better model")
-                    previous_val = validation_score
-                    self.best_model = deepcopy(self.model).to(device)
-                    path = os.getcwd()
-                    self.save(path)
-                episode_return.append(episode_cum_reward)
-                
-                episode_cum_reward = 0
-            else:
-                state = next_state
+          for _ in range(config['gradient_steps']):
+              # Convert state to tensor
+              state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+
+              # Actor decides on action
+              action_prob = self.actor(state_tensor)
+              distribution = torch.distributions.Categorical(action_prob)
+              action = distribution.sample()
+
+              # Take action
+              #print(env.step(action.item()))
+              next_state, reward, done, trunc, _ = env.step(action.item())
+              next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
+
+              # Critic evaluates decision
+              value = self.critic(state_tensor)
+              next_value = self.critic(next_state_tensor).detach()
+
+              # Compute advantage and critic loss
+              td_target = reward + config['gamma'] * next_value * (1 - int(done))
+              advantage = td_target - value
+              critic_loss = critic_loss_fn(value, td_target)
+
+              # Update critic
+              critic_optimizer.zero_grad()
+              critic_loss.backward()
+              critic_optimizer.step()
+
+              # Update actor using policy gradient
+              actor_loss = -(distribution.log_prob(action) * advantage.detach())
+              #print(actor_loss)
+              actor_optimizer.zero_grad()
+              actor_loss.backward()
+              actor_optimizer.step()
+
+              episode_cum_reward += reward
+              state = next_state
 
 
-        #self.model.load_state_dict(self.best_model.state_dict())
-        path = os.getcwd()
-        self.save(path)
-        return episode_return
+          if episode > val_episode:
+            validation_score = evaluate_HIV(agent=self, nb_episode=1)
+          else:
+            validation_score = 0.
+          
+
+          print(f"Episode {episode + 1}/{max_episodes}, Total Reward: {episode_cum_reward}, Validation score: {validation_score}")
+
+          if validation_score > previous_val: 
+            
+            print('Improvement, saving a model')
+            previous_val = validation_score
+            path = os.getcwd()
+            self.save(path)
+    
+
+      print("Training complete.")
 
 
 
