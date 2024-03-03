@@ -1,6 +1,8 @@
 from gymnasium.wrappers import TimeLimit
 from env_hiv import HIVPatient
 from evaluate import evaluate_HIV, evaluate_HIV_population
+
+
 import random
 import torch
 import torch.nn as nn
@@ -74,7 +76,7 @@ class ProjectAgent:
       self.actor, self.critic = self.create_actor_critic_networks(
             env.observation_space.shape[0],
             env.action_space.n,
-            256,  # Example: number of neurons in hidden layers
+            512,  # Example: number of neurons in hidden layers
             device
         )
       # Load the state dicts
@@ -86,7 +88,7 @@ class ProjectAgent:
 
     ## MODEL ARCHITECTURE
 
-    def create_actor_critic_networks(self, state_dim, n_action, nb_neurons, device): #action_critic_network
+    def create_actor_critic_networks_initial(self, state_dim, n_action, nb_neurons, device): #action_critic_network
       # Actor Network
       actor = torch.nn.Sequential(
           nn.Linear(state_dim, nb_neurons),
@@ -96,7 +98,6 @@ class ProjectAgent:
           nn.Linear(nb_neurons, n_action),
           nn.Softmax(dim=-1)  # Use Softmax for action probability distribution
       ).to(device)
-    
       # Critic Network
       critic = torch.nn.Sequential(
           nn.Linear(state_dim, nb_neurons),
@@ -105,7 +106,34 @@ class ProjectAgent:
           nn.ReLU(),
           nn.Linear(nb_neurons, 1)  # Outputs a single value estimating the state value
       ).to(device)
+      return actor, critic
 
+
+
+    def create_actor_critic_networks(self, state_dim, n_action, nb_neurons, device):
+      '''
+      I add layer normalization (used in altegrad, and a dropout layer seen in Theoretical foudnation of deep learning)
+      I try to introduce some regularization
+      '''
+      # Actor Network
+      actor = torch.nn.Sequential(
+          nn.Linear(state_dim, nb_neurons),
+          nn.ReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.ReLU(),
+          nn.Dropout(p=0.2),  # Dropout for regularization
+          nn.Linear(nb_neurons, n_action),
+          nn.Softmax(dim=-1)
+      ).to(device)
+      # Critic Network
+      critic = torch.nn.Sequential(
+          nn.Linear(state_dim, nb_neurons),
+          nn.LeakyReLU(),  # Different activation function
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.LeakyReLU(),
+          nn.LayerNorm(nb_neurons),  # Batch normalization
+          nn.Linear(nb_neurons, 1) 
+      ).to(device)
       return actor, critic
 
 
@@ -124,7 +152,7 @@ class ProjectAgent:
           'update_freq': 1,  # Update frequency for the actor and critic networks
           'critic_learning_rate': 0.001,  # Learning rate for critic
           'actor_learning_rate': 0.0001,  # Learning rate for actor
-          'gradient_steps' : 50,
+          'gradient_steps' : 100,
       }
 
       device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -135,7 +163,7 @@ class ProjectAgent:
       self.actor, self.critic = self.create_actor_critic_networks(
           env.observation_space.shape[0],
           env.action_space.n,
-          256,  # Example: number of neurons in hidden layers
+          512,  # Example: number of neurons in hidden layers
           device
       )
 
@@ -149,9 +177,9 @@ class ProjectAgent:
       critic_loss_fn = torch.nn.MSELoss()
 
       ## TRAINING LOOP
-      max_episodes = 20
+      max_episodes = 25#250
       episode = 0
-      val_episode = 15 #the episode when we start to save by looking at the validation loss
+      val_episode = 10#90 #the episode when we start to save by looking at the validation loss
       previous_val = 0.
       for episode in range(max_episodes):
           state, _ = env.reset()
