@@ -65,7 +65,6 @@ class ProjectAgent:
       return
 
 
-
     def load(self):
       device = torch.device('cpu')
       filepath = os.getcwd()
