@@ -68,8 +68,9 @@ class ProjectAgent:
 
 
 
-    def load(self, filepath):
+    def load(self):
       device = torch.device('cpu')
+      filepath = os.getcwd()
       path = filepath + '/AC_model.pt'
       checkpoint = torch.load(path)
       self.actor, self.critic = self.create_actor_critic_networks(
