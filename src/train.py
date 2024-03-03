@@ -252,7 +252,7 @@ class ProjectAgent:
                 state = next_state
 
 
-        self.model.load_state_dict(self.best_model.state_dict())
+        #self.model.load_state_dict(self.best_model.state_dict())
         path = os.getcwd()
         self.save(path)
         return episode_return
