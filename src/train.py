@@ -39,7 +39,7 @@ env = TimeLimit(
 # ENJOY!
 class ProjectAgent:
 
-    def act(self, observation, use_random=False): #only the actor will do an action 
+    def act(self, observation, use_random=False): #only the actor will do an action
         device = "cuda" if next(self.actor.parameters()).is_cuda else "cpu"
         observation_tensor = torch.Tensor(observation).unsqueeze(0).to(device)
 
@@ -52,14 +52,14 @@ class ProjectAgent:
                 # Sample an action from the probability distribution output by the actor
                 distribution = torch.distributions.Categorical(action_probabilities)
                 action = distribution.sample().item()
-        
+
         return action
 
     def save(self, filepath):
       checkpoint = {
           'actor_state_dict': self.actor.state_dict(),
           'critic_state_dict': self.critic.state_dict()
-          
+
       }
       path = filepath + '/AC_model.pt'
       torch.save(checkpoint, path)
@@ -76,7 +76,7 @@ class ProjectAgent:
       self.actor, self.critic = self.create_actor_critic_networks(
             env.observation_space.shape[0],
             env.action_space.n,
-            512,  # Example: number of neurons in hidden layers
+            256,  
             device
         )
       # Load the state dicts
@@ -121,6 +121,10 @@ class ProjectAgent:
           nn.ReLU(),
           nn.Linear(nb_neurons, nb_neurons),
           nn.ReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.ReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.ReLU(),
           nn.Dropout(p=0.2),  # Dropout for regularization
           nn.Linear(nb_neurons, n_action),
           nn.Softmax(dim=-1)
@@ -131,13 +135,17 @@ class ProjectAgent:
           nn.LeakyReLU(),  # Different activation function
           nn.Linear(nb_neurons, nb_neurons),
           nn.LeakyReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.LeakyReLU(),
+          nn.Linear(nb_neurons, nb_neurons),
+          nn.LeakyReLU(),
           nn.LayerNorm(nb_neurons),  # Batch normalization
-          nn.Linear(nb_neurons, 1) 
+          nn.Linear(nb_neurons, 1)
       ).to(device)
       return actor, critic
 
 
-    
+
 
 
     def train(self):
@@ -163,7 +171,7 @@ class ProjectAgent:
       self.actor, self.critic = self.create_actor_critic_networks(
           env.observation_space.shape[0],
           env.action_space.n,
-          512,  # Example: number of neurons in hidden layers
+          256,  # Example: number of neurons in hidden layers
           device
       )
 
@@ -173,13 +181,15 @@ class ProjectAgent:
       actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=config['actor_learning_rate'])
       critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=config['critic_learning_rate'])
 
+      
+
       # Loss function for critic updates
       critic_loss_fn = torch.nn.MSELoss()
 
       ## TRAINING LOOP
-      max_episodes = 25#250
+      max_episodes = 200
       episode = 0
-      val_episode = 10#90 #the episode when we start to save by looking at the validation loss
+      val_episode = 50 #the episode when we start to save by looking at the validation loss
       previous_val = 0.
       for episode in range(max_episodes):
           state, _ = env.reset()
@@ -228,17 +238,17 @@ class ProjectAgent:
             validation_score = evaluate_HIV(agent=self, nb_episode=1)
           else:
             validation_score = 0.
-          
+
 
           print(f"Episode {episode + 1}/{max_episodes}, Total Reward: {episode_cum_reward}, Validation score: {validation_score}")
 
-          if validation_score > previous_val: 
-            
+          if validation_score > previous_val:
+
             print('Improvement, saving a model')
             previous_val = validation_score
             path = os.getcwd()
             self.save(path)
-    
+
 
       print("Training complete.")
 
