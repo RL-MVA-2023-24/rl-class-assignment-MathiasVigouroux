@@ -74,7 +74,7 @@ class ProjectAgent:
       device = torch.device('cpu')
       filepath = os.getcwd()
       path = filepath + '/AC_model.pt'
-      checkpoint = torch.load(path)
+      checkpoint = torch.load(path, map_location=device)
       self.actor, self.critic = self.create_actor_critic_networks(
             env.observation_space.shape[0],
             env.action_space.n,
