@@ -1,12 +1,16 @@
 from gymnasium.wrappers import TimeLimit
 from env_hiv import HIVPatient
 from evaluate import evaluate_HIV, evaluate_HIV_population
+
+
 import random
 import torch
 import torch.nn as nn
 from copy import deepcopy
 import numpy as np
 import os
+import torch.optim as optim
+
 
 class ReplayBuffer:
     def __init__(self, capacity, device):
@@ -65,6 +69,7 @@ class ProjectAgent:
       return
 
 
+
     def load(self):
       device = torch.device('cpu')
       filepath = os.getcwd()
@@ -73,7 +78,7 @@ class ProjectAgent:
       self.actor, self.critic = self.create_actor_critic_networks(
             env.observation_space.shape[0],
             env.action_space.n,
-            256,  
+            256,
             device
         )
       # Load the state dicts
@@ -118,10 +123,6 @@ class ProjectAgent:
           nn.ReLU(),
           nn.Linear(nb_neurons, nb_neurons),
           nn.ReLU(),
-          nn.Linear(nb_neurons, nb_neurons),
-          nn.ReLU(),
-          nn.Linear(nb_neurons, nb_neurons),
-          nn.ReLU(),
           nn.Dropout(p=0.2),  # Dropout for regularization
           nn.Linear(nb_neurons, n_action),
           nn.Softmax(dim=-1)
@@ -130,10 +131,6 @@ class ProjectAgent:
       critic = torch.nn.Sequential(
           nn.Linear(state_dim, nb_neurons),
           nn.LeakyReLU(),  # Different activation function
-          nn.Linear(nb_neurons, nb_neurons),
-          nn.LeakyReLU(),
-          nn.Linear(nb_neurons, nb_neurons),
-          nn.LeakyReLU(),
           nn.Linear(nb_neurons, nb_neurons),
           nn.LeakyReLU(),
           nn.LayerNorm(nb_neurons),  # Batch normalization
@@ -158,6 +155,11 @@ class ProjectAgent:
           'critic_learning_rate': 0.001,  # Learning rate for critic
           'actor_learning_rate': 0.0001,  # Learning rate for actor
           'gradient_steps' : 100,
+          'entropy_weight' : 1,
+
+          'max_episodes': 20,
+          'val_episode':5, #the episode when we start to save by looking at the validation loss
+
       }
 
       device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -168,7 +170,7 @@ class ProjectAgent:
       self.actor, self.critic = self.create_actor_critic_networks(
           env.observation_space.shape[0],
           env.action_space.n,
-          256,  # Example: number of neurons in hidden layers
+          256,  
           device
       )
 
@@ -178,19 +180,24 @@ class ProjectAgent:
       actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=config['actor_learning_rate'])
       critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=config['critic_learning_rate'])
 
-      
+      # The schedulers
+      # Initialize LR schedulers (optional)
+      actor_scheduler = optim.lr_scheduler.StepLR(actor_optimizer, step_size=100, gamma=0.99)
+      critic_scheduler = optim.lr_scheduler.StepLR(critic_optimizer, step_size=100, gamma=0.99)
+
 
       # Loss function for critic updates
       critic_loss_fn = torch.nn.MSELoss()
 
       ## TRAINING LOOP
-      max_episodes = 200
+      max_episodes = config['max_episodes']#200
       episode = 0
-      val_episode = 50 #the episode when we start to save by looking at the validation loss
+      val_episode = config['val_episode']#50 
       previous_val = 0.
       for episode in range(max_episodes):
           state, _ = env.reset()
           episode_cum_reward = 0
+          #entropies = []
 
           for _ in range(config['gradient_steps']):
               # Convert state to tensor
@@ -201,31 +208,37 @@ class ProjectAgent:
               distribution = torch.distributions.Categorical(action_prob)
               action = distribution.sample()
 
+              # Calculate entropy and store for averaging
+              entropy = distribution.entropy()
+              #entropies.append(entropy)
+
               # Take action
               #print(env.step(action.item()))
               next_state, reward, done, trunc, _ = env.step(action.item())
               next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
 
-              # Critic evaluates decision
-              value = self.critic(state_tensor)
-              next_value = self.critic(next_state_tensor).detach()
 
-              # Compute advantage and critic loss
-              td_target = reward + config['gamma'] * next_value * (1 - int(done))
-              advantage = td_target - value
-              critic_loss = critic_loss_fn(value, td_target)
+              # Critic evaluates the state
+              state_value = self.critic(state_tensor)
+              #next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
+              next_state_value = self.critic(next_state_tensor).detach()
+
+              # Calculate advantage
+              td_error = reward + (config['gamma'] * next_state_value * (1 - int(done))) - state_value
+              advantage = td_error.detach()
 
               # Update critic
+              critic_loss = td_error.pow(2)
               critic_optimizer.zero_grad()
               critic_loss.backward()
               critic_optimizer.step()
 
-              # Update actor using policy gradient
-              actor_loss = -(distribution.log_prob(action) * advantage.detach())
-              #print(actor_loss)
+              # Update actor with entropy term
+              actor_loss = -(distribution.log_prob(action) * advantage) - config['entropy_weight'] * entropy
               actor_optimizer.zero_grad()
               actor_loss.backward()
               actor_optimizer.step()
+
 
               episode_cum_reward += reward
               state = next_state
@@ -245,8 +258,9 @@ class ProjectAgent:
             previous_val = validation_score
             path = os.getcwd()
             self.save(path)
-
-
+          # Update learning rate using schedulers
+          actor_scheduler.step()
+          critic_scheduler.step()
       print("Training complete.")
 
 
